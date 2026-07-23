@@ -7,6 +7,31 @@ on:
     branches: [ main ]
 
 jobs:
+  validate-commits:
+    name: Validate Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Commitizen
+        run: pip install commitizen
+
+      - name: Check commit messages
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            cz check --rev-range origin/${{ github.base_ref }}..HEAD
+          else
+            cz check --rev-range ${{ github.event.before }}..${{ github.sha }}
+          fi
+
   build-and-test-silicon:
     name: Build & Test Silicon Backend
     runs-on: ubuntu-latest
