@@ -6,7 +6,7 @@
 
 Ready-to-use Docker container for [Nagini](https://github.com/marcoeilers/nagini), the formal verification tool for Python 3 built on the Viper infrastructure.
 
-Pre-packaged with Python 3.12, OpenJDK 17, Z3 solver, Boogie, and Mono. No local toolchain configuration required.
+Pre-packaged with Python 3.12, OpenJDK 17, pinned Z3 solver (v4.16.0), Boogie, and .NET. No local toolchain configuration required.
 
 ---
 

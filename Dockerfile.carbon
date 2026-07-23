@@ -8,15 +8,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     JAVA_HOME=/usr/lib/jvm/default-java \
-    Z3_EXE="/usr/bin/z3" \
+    Z3_EXE="/usr/local/bin/z3" \
     BOOGIE_EXE="/usr/local/bin/boogie" \
     HOME=/home/naginiuser \
     PATH="/usr/lib/jvm/default-java/bin:${PATH}"
 
-# Install Java 17 JRE, Z3 solver, C compilation headers, and build utilities
+# Install Java 17 JRE, C compilation headers, and build utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless \
-    z3 \
     git \
     curl \
     ca-certificates \
@@ -35,8 +34,9 @@ RUN curl -sSL -o /tmp/dotnet-install.sh https://dot.net/v1/dotnet-install.sh && 
 # Install Boogie verifier executable to /usr/local/bin
 RUN dotnet tool install --tool-path /usr/local/bin Boogie
 
-# Upgrade Python build tools and install Nagini with server, lsp, and mcp extras
+# Upgrade Python build tools and install pinned Z3 4.16.0 and Nagini with server, lsp, and mcp extras
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir z3-solver==4.16.0.0 && \
     if echo "${NAGINI_REF}" | grep -qE '^[0-9]+\.[0-9]+'; then \
         pip install --no-cache-dir "nagini[server,lsp,mcp]==${NAGINI_REF}"; \
     else \
