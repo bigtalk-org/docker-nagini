@@ -1,0 +1,177 @@
+name: Upstream Sync & Dual Release Publishing
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force image rebuild regardless of upstream state'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  publish-silicon:
+    name: Publish Silicon Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream Nagini commit
+        id: upstream
+        run: |
+          UPSTREAM_COMMIT=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/marcoeilers/nagini/commits | jq -r '.[0].sha')
+          if [ -z "$UPSTREAM_COMMIT" ] || [ "$UPSTREAM_COMMIT" = "null" ]; then
+            echo "Failed to fetch upstream commit SHA" && exit 1
+          fi
+          SHORT_SHA=$(echo "${UPSTREAM_COMMIT}" | cut -c1-7)
+          echo "upstream_sha=${UPSTREAM_COMMIT}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Silicon image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            ${{ (env.DOCKERHUB_USERNAME && env.DOCKERHUB_TOKEN) && format('{0}/nagini', env.DOCKERHUB_USERNAME) || '' }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=silicon
+            type=raw,value=${{ steps.upstream.outputs.short_sha }}
+
+      - name: Build local Silicon container image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          build-args: |
+            NAGINI_REF=${{ steps.upstream.outputs.upstream_sha }}
+          load: true
+          tags: docker-nagini:silicon-release
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test contract verification prior to publish (Silicon)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/code docker-nagini:silicon-release tests/sample_test.py
+
+      - name: Build and push Silicon image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          build-args: |
+            NAGINI_REF=${{ steps.upstream.outputs.upstream_sha }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish-carbon:
+    name: Publish Carbon Release
+    needs: publish-silicon
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream Nagini commit
+        id: upstream
+        run: |
+          UPSTREAM_COMMIT=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/marcoeilers/nagini/commits | jq -r '.[0].sha')
+          if [ -z "$UPSTREAM_COMMIT" ] || [ "$UPSTREAM_COMMIT" = "null" ]; then
+            echo "Failed to fetch upstream commit SHA" && exit 1
+          fi
+          SHORT_SHA=$(echo "${UPSTREAM_COMMIT}" | cut -c1-7)
+          echo "upstream_sha=${UPSTREAM_COMMIT}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Carbon image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            ${{ (env.DOCKERHUB_USERNAME && env.DOCKERHUB_TOKEN) && format('{0}/nagini', env.DOCKERHUB_USERNAME) || '' }}
+          tags: |
+            type=raw,value=carbon
+            type=raw,value=carbon-${{ steps.upstream.outputs.short_sha }}
+
+      - name: Build local Carbon container image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.carbon
+          build-args: |
+            NAGINI_REF=${{ steps.upstream.outputs.upstream_sha }}
+          load: true
+          tags: docker-nagini:carbon-release
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test contract verification prior to publish (Carbon)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/code docker-nagini:carbon-release --verifier carbon tests/sample_test.py
+
+      - name: Build and push Carbon image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.carbon
+          build-args: |
+            NAGINI_REF=${{ steps.upstream.outputs.upstream_sha }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test-silicon:
+    name: Build & Test Silicon Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Silicon container image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: docker-nagini:silicon
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Nagini CLI help output
+        run: |
+          docker run --rm docker-nagini:silicon --help
+
+      - name: Test contract verification (Silicon backend)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/code docker-nagini:silicon tests/sample_test.py
+
+  build-and-test-carbon:
+    name: Build & Test Carbon Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Carbon container image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.carbon
+          load: true
+          tags: docker-nagini:carbon
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Nagini CLI help output
+        run: |
+          docker run --rm docker-nagini:carbon --help
+
+      - name: Test contract verification (Carbon backend)
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/code docker-nagini:carbon --verifier carbon tests/sample_test.py
